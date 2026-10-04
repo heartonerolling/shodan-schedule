@@ -210,7 +210,13 @@ function saveBooking_(b, isNew) {
     target = ctx.rows.filter(function (r) { return r.id === String(b.id); })[0];
     if (!target) throw new Error('この予約は削除されています。画面を更新してください');
   }
-  const id = isNew ? Utilities.getUuid() : target.id;
+  // 新規登録は画面側で決めたIDを使う。通信の再試行で同じ依頼が2回届いても1件だけになる
+  const clientId = /^[A-Za-z0-9-]{8,64}$/.test(String(b.id || '')) ? String(b.id) : '';
+  if (isNew && clientId) {
+    const existing = ctx.rows.filter(function (r) { return r.id === clientId; })[0];
+    if (existing) return toBooking_(existing);
+  }
+  const id = isNew ? (clientId || Utilities.getUuid()) : target.id;
 
   // 重複チェック（同じ日・同じ担当者で時間が重なる予約）
   const conflict = ctx.rows.filter(function (r) {

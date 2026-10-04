@@ -45,6 +45,7 @@ button:disabled{opacity:.5;cursor:default}
 .date-input{border:1px solid var(--border-strong);border-radius:8px;padding:5px 8px;background:var(--surface);color:var(--text);font:inherit}
 .spacer{flex:1}
 .sync{color:var(--muted);font-size:12px;white-space:nowrap}
+.sync.warn{color:var(--sat)} .sync.error{color:var(--danger);font-weight:700}
 .sun{color:var(--sun)} .sat{color:var(--sat)}
 
 .banner{margin:12px 16px 0;padding:10px 14px;border-radius:10px;background:var(--accent-weak);color:var(--text);font-size:13px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -104,6 +105,9 @@ main.card{padding:0;overflow:hidden}
 .bk.dragging{pointer-events:none;opacity:.9;box-shadow:var(--shadow);z-index:4;cursor:grabbing}
 .bk.conflict{outline:2px solid var(--danger);outline-offset:1px}
 .bk.pending{opacity:.55}
+.bk.stacked{padding:2px 8px;display:flex;align-items:center}
+.bk.stacked .bk-time{display:none}
+.tl.loading .lane{opacity:.45;pointer-events:none}
 .bk:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .ghost{position:absolute;top:5px;bottom:5px;border-radius:6px;background:var(--accent-weak);border:2px dashed var(--accent);pointer-events:none;font-size:11px;padding:2px 6px;color:var(--accent);font-weight:700;white-space:nowrap;overflow:hidden;z-index:3}
 .ghost.conflict{border-color:var(--danger);background:var(--danger-weak);color:var(--danger)}
@@ -324,22 +328,48 @@ function validateBooking(b, list) {
 }
 
 // ---------- API ----------
+const TIMEOUT_MS = 20 * 1000;      // これ以上返事がなければ打ち切って再試行
+const RETRY_DELAYS = [1500, 4000]; // 一時的なエラーのときの再試行までの待ち時間
+const transientError = msg => Object.assign(new Error(msg), { transient: true });
+
+// 一時的なエラー（通信断・タイムアウト・Google側の404/5xx）は自動で再試行する。
+// 新規登録は画面側で決めたIDを送るので、再送しても二重登録にはならない
 async function api(action, payload = {}) {
-  if (isDemo()) return mockApi(action, payload);
-  let res;
+  for (let i = 0; ; i++) {
+    try {
+      return await (isDemo() ? mockApi(action, payload) : callApi(action, payload));
+    } catch (e) {
+      if (!e.transient || i >= RETRY_DELAYS.length) throw e;
+      setSync(`再接続中…（${i + 1}回目）`, 'warn');
+      await new Promise(r => setTimeout(r, RETRY_DELAYS[i]));
+    }
+  }
+}
+
+async function callApi(action, payload) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  let res, text;
   try {
     // text/plain にすると CORS のプリフライトが発生せず Apps Script にそのまま届く
     res = await fetch(settings.url, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action, token: settings.token, ...payload })
+      body: JSON.stringify({ action, token: settings.token, ...payload }),
+      signal: ctrl.signal
     });
+    text = await res.text();
   } catch (e) {
-    throw new Error('サーバーに接続できません。URLとWebアプリの公開設定（アクセス：全員）を確認してください');
+    throw transientError(e.name === 'AbortError'
+      ? 'サーバーの応答がありません。しばらくしてからもう一度お試しください'
+      : 'サーバーに接続できません。通信環境、またはURLとWebアプリの公開設定（アクセス：全員）を確認してください');
+  } finally {
+    clearTimeout(timer);
   }
+  if (res.status === 404 || res.status >= 500) throw transientError(`サーバーが一時的に応答できません（${res.status}）`);
   if (!res.ok) throw new Error(`通信エラー（${res.status}）`);
   let data;
-  try { data = await res.json(); } catch (e) {
+  try { data = JSON.parse(text); } catch (e) {
     throw new Error('応答を読み取れません。Webアプリの公開設定（アクセス：全員）を確認してください');
   }
   if (!data.ok) { const err = new Error(data.error || 'エラーが発生しました'); err.code = data.code; throw err; }
@@ -366,8 +396,10 @@ function mockDb() {
   return mockMem;
 }
 function mockSave() { try { localStorage.setItem(LS_MOCK, JSON.stringify(mockMem)); } catch (e) {} }
+let mockFlaky = Number(PARAMS.get('flaky')) || 0; // テスト用：最初のN回をGoogle側の一時エラーとして失敗させる
 async function mockApi(action, p) {
   await new Promise(r => setTimeout(r, MOCK_DELAY));
+  if (mockFlaky > 0) { mockFlaky--; throw transientError('サーバーが一時的に応答できません（404）'); }
   const db = mockDb();
   const fail = msg => { throw new Error(msg); };
   const inMonths = ms => db.bookings.filter(b => ms.includes(monthKey(b.date))).map(b => ({ ...b }));
@@ -380,8 +412,11 @@ async function mockApi(action, p) {
     case 'create':
     case 'update': {
       const b = { ...p.booking, title: p.booking.title.trim() };
-      if (action === 'create') b.id = 'd' + Date.now();
-      else if (!db.bookings.some(x => x.id === b.id)) fail('この予約は削除されています。画面を更新してください');
+      if (action === 'create') {
+        const dup = b.id && db.bookings.find(x => x.id === b.id);
+        if (dup) return { ok: true, booking: dup, version: db.version, bookings: inMonths(p.months || []) };
+        b.id = b.id || 'd' + Date.now();
+      } else if (!db.bookings.some(x => x.id === b.id)) fail('この予約は削除されています。画面を更新してください');
       const err = validateBooking(b, db.bookings); if (err) fail(err);
       if (action === 'create') db.bookings.push(b);
       else db.bookings[db.bookings.findIndex(x => x.id === b.id)] = b;
@@ -399,13 +434,37 @@ async function mockApi(action, p) {
 // ---------- データ読み込み ----------
 let dataVersion = null;  // サーバー側データの版数。変わったときだけ予約一覧を受け取る
 let inflight = 0;        // 保存中の件数。この間は定期確認の結果で画面を上書きしない
-const shownMonths = () => [...new Set([monthKey(selDate), calMonth])];
+let booted = false;      // サーバーから担当者などの設定を受け取れたか
+let booting = false;     // 接続処理中（この間は定期確認を止める）
+const shiftMonth = (mk, n) => { const [y, m] = mk.split('-').map(Number); return fmtDate(new Date(y, m - 1 + n, 1)).slice(0, 7); };
+// 表示中の月に加えて前後の月も持っておき、月をまたいで日付を動かしても待たずに表示する
+const shownMonths = () => { const m = monthKey(selDate); return [...new Set([shiftMonth(m, -1), m, shiftMonth(m, 1), calMonth])]; };
 const newerOrSame = v => Number(v || 0) >= Number(dataVersion || 0);
+
+// 前回受け取ったデータをブラウザに保存し、次に開いたときは通信を待たずに表示する
+const LS_LOCAL = 'shodan.local';
+function saveLocal() {
+  if (isDemo()) return;
+  const months = {};
+  for (const k in cache) months[k] = cache[k].filter(b => !b._pending);
+  try { localStorage.setItem(LS_LOCAL, JSON.stringify({ url: settings.url, members, colors, cfg, months, savedAt: Date.now() })); } catch (e) {}
+}
+function loadLocal() {
+  if (isDemo()) return false;
+  try {
+    const d = JSON.parse(localStorage.getItem(LS_LOCAL) || 'null');
+    if (!d || d.url !== settings.url) return false;
+    members = d.members || members; colors = d.colors || colors; cfg = d.cfg || cfg;
+    Object.assign(cache, d.months || {});
+    return true;
+  } catch (e) { return false; }
+}
 
 function applyBookings(months, bookings, version) {
   months.forEach(m => { cache[m] = []; });
   bookings.forEach(b => { const m = monthKey(b.date); if (cache[m]) cache[m].push(b); });
   if (version) dataVersion = version;
+  saveLocal();
 }
 
 // force=false なら版数の確認だけ（変更がなければシートを読まないので速い）
@@ -421,7 +480,7 @@ async function refresh(quiet, force = true) {
     const now = new Date();
     setSync(`最終更新 ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`);
   } catch (e) {
-    setSync('同期エラー');
+    setSync(e.transient ? 'つながりにくい状態です（自動で再試行します）' : '同期エラー', 'error');
     if (!quiet) toast(e.message, 'error');
     if (e.code === 'auth') openSettings(e.message);
     renderAll();
@@ -449,23 +508,39 @@ async function mutate(action, payload, applyLocal) {
     renderAll();
   }
 }
-async function bootstrap() {
+// resetCache: 接続先を変えたときは前の接続先のデータを捨てる
+// fromSettings: 設定画面から接続したときは、失敗理由を設定画面に出す（URLの打ち間違いなど）
+async function bootstrap(resetCache, fromSettings) {
   $('#demoBanner').hidden = !isDemo();
+  if (resetCache) { for (const k in cache) delete cache[k]; }
+  dataVersion = null;
+  booting = true;
   try {
     const res = await api('bootstrap');
     members = res.members || [];
     colors = res.colors || colors;
     cfg = { startHour: res.startHour, endHour: res.endHour, intervalMin: res.intervalMin };
-    for (const k in cache) delete cache[k];
-    dataVersion = null;
+    booted = true;
     await refresh();
   } catch (e) {
-    setSync('未接続');
     renderAll();
-    openSettings(e.message);
+    if (e.transient && !fromSettings) {
+      // Google側の一時的な不調。前回のデータを表示したまま、定期確認のタイミングで繋ぎ直す
+      setSync('つながりにくい状態です（自動で再試行します）', 'error');
+      toast(e.message, 'error');
+    } else {
+      setSync('未接続', 'error');
+      openSettings(e.message);
+    }
+  } finally {
+    booting = false;
   }
 }
-function setSync(t) { $('#syncStatus').textContent = t; }
+function setSync(t, kind) {
+  const s = $('#syncStatus');
+  s.textContent = t;
+  s.className = 'sync' + (kind ? ' ' + kind : '');
+}
 
 // ---------- 描画 ----------
 function renderAll() {
@@ -555,8 +630,9 @@ function autoScroll(list) {
   if (sc.scrollWidth <= sc.clientWidth) return;
   const now = new Date();
   let idx;
-  if (fmtDate(now) === selDate) {
-    const nowIdx = (now.getHours() * 60 + now.getMinutes() - cfg.startHour * 60) / cfg.intervalMin;
+  const nowIdx = (now.getHours() * 60 + now.getMinutes() - cfg.startHour * 60) / cfg.intervalMin;
+  // 今日でも営業時間外（早朝・夜）は、現在時刻ではなく最初の予約の位置を見せる
+  if (fmtDate(now) === selDate && nowIdx >= 0 && nowIdx <= slots()) {
     // 進行中の予約はタイトルが見えるよう開始位置から表示
     const running = list.filter(b => t2i(b.start) <= nowIdx && nowIdx < t2i(b.end)).map(b => t2i(b.start));
     idx = Math.min(nowIdx - perHour(), ...running);
@@ -604,14 +680,44 @@ function renderTimeline() {
     row.append(name);
     const lane = el('div', 'lane');
     lane.dataset.member = m;
-    list.filter(b => b.member === m).forEach(b => lane.append(bookingEl(b)));
+    // 時間が重なる予約（重複チェック導入前のデータなど）は段をずらして全部見えるようにする
+    const mine = list.filter(b => b.member === m);
+    const { track, count } = assignTracks(mine);
+    if (count > 1) row.style.height = (count * TRACK_H + 10) + 'px';
+    mine.forEach(b => {
+      const node = bookingEl(b);
+      if (count > 1) {
+        node.classList.add('stacked');
+        node.style.top = (5 + track.get(b) * TRACK_H) + 'px';
+        node.style.height = (TRACK_H - 3) + 'px';
+        node.style.bottom = 'auto';
+      }
+      lane.append(node);
+    });
     row.append(lane);
     tl.append(row);
   });
 
   renderNow();
   autoScroll(list);
-  $('#tlFoot').textContent = list.length ? `この日の予約：${list.length}件` : 'この日の予約はまだありません。空いている枠をドラッグして登録できます。';
+  const loading = !cache[monthKey(selDate)];
+  tl.classList.toggle('loading', loading);
+  const overlaps = rowMembers.reduce((n, m) => n + (assignTracks(list.filter(b => b.member === m)).count > 1 ? 1 : 0), 0);
+  $('#tlFoot').textContent = loading ? '予約を読み込んでいます…'
+    : list.length ? `この日の予約：${list.length}件` + (overlaps ? '（時間が重なっている予約があります）' : '')
+    : 'この日の予約はまだありません。空いている枠をドラッグして登録できます。';
+}
+
+// 重なる予約に段番号を振る（空いている一番上の段に入れる）
+const TRACK_H = 30;
+function assignTracks(items) {
+  const track = new Map(), ends = [];
+  [...items].sort((a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end)).forEach(b => {
+    let i = ends.findIndex(e => e <= b.start);
+    if (i === -1) { i = ends.length; ends.push(b.end); } else ends[i] = b.end;
+    track.set(b, i);
+  });
+  return { track, count: Math.max(1, ends.length) };
 }
 
 function renderNow() {
@@ -632,7 +738,7 @@ async function setDate(ds) {
   selDate = ds;
   calMonth = monthKey(ds);
   renderAll();
-  if (!cache[calMonth]) await refresh();
+  if (shownMonths().some(m => !cache[m])) await refresh(true);
 }
 function shiftDay(n) { const d = parseDate(selDate); d.setDate(d.getDate() + n); setDate(fmtDate(d)); }
 async function shiftCal(n) {
@@ -640,7 +746,7 @@ async function shiftCal(n) {
   const d = new Date(y, m - 1 + n, 1);
   calMonth = fmtDate(d).slice(0, 7);
   renderCal();
-  if (!cache[calMonth]) await refresh();
+  if (shownMonths().some(m => !cache[m])) await refresh(true);
 }
 
 // ---------- ドラッグ操作 ----------
@@ -838,9 +944,10 @@ $('#editForm').addEventListener('submit', async ev => {
   // すぐ閉じて表に反映し、保存は裏で行う。失敗したら入力内容のまま入力画面を開き直す
   editDlg.close();
   if (b.date !== selDate) { selDate = b.date; calMonth = monthKey(b.date); }
-  const localId = isNew ? 'tmp-' + Date.now() : orig.id;
+  // 新規は画面側でIDを決める（再試行しても二重登録されず、確定後も同じIDのまま）
+  if (isNew) b.id = 'b-' + crypto.randomUUID();
   try {
-    await mutate(isNew ? 'create' : 'update', { booking: b }, () => placeLocal(orig.id, { ...b, id: localId }));
+    await mutate(isNew ? 'create' : 'update', { booking: b }, () => placeLocal(orig.id, b));
     toast(isNew ? '登録しました' : '変更しました');
   } catch (e) {
     toast(e.message, 'error');
@@ -883,7 +990,7 @@ $('#setForm').addEventListener('submit', async ev => {
   settings = { url, token };
   saveSettings();
   setDlg.close();
-  await bootstrap();
+  await bootstrap(true, true);
 });
 $('#setCancel').addEventListener('click', () => setDlg.close());
 
@@ -914,12 +1021,12 @@ $('#addBtn').addEventListener('click', () => {
   openEditor({ date: selDate, member: members[0] || '', start: i2t(s), end: i2t(Math.min(slots(), s + perHour())), title: '', color: firstColor() }, true);
 });
 
-const canAutoRefresh = () => !drag && !inflight && !setDlg.open && document.visibilityState === 'visible';
+const canAutoRefresh = () => !drag && !inflight && !booting && !setDlg.open && document.visibilityState === 'visible';
 let pollCount = 0, polling = false;
 async function poll(force) {
   if (polling || !canAutoRefresh()) return;
   polling = true;
-  try { await refresh(true, force); } finally { polling = false; }
+  try { await (booted ? refresh(true, force) : bootstrap()); } finally { polling = false; }
 }
 setInterval(() => poll(++pollCount % FULL_EVERY === 0), POLL_MS);
 setInterval(renderNow, 60 * 1000);
@@ -932,7 +1039,10 @@ document.addEventListener('visibilitychange', () => poll(false));
 
 renderAll();
 if (settings.url && !settings.token) openSettings('合言葉を入力してください');
-else bootstrap();
+else {
+  if (loadLocal()) { renderAll(); setSync('前回のデータを表示中・更新しています…'); }
+  bootstrap();
+}
 </script>
 </body>
 </html>

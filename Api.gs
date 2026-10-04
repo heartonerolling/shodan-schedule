@@ -51,14 +51,25 @@ function doPost(e) {
           intervalMin: INTERVAL_MIN
         });
       case 'list':
-        return json_({ ok: true, bookings: withLock_(function () { return listBookings_(req.from, req.to); }) });
+        return json_({ ok: true, version: getVersion_(), bookings: withLock_(function () { return listBookings_(req.from, req.to); }) });
+      case 'sync': {
+        // 画面の定期確認用：変更がなければシートを読まずにすぐ返す
+        const version = getVersion_();
+        if (!req.force && req.version === version) return json_({ ok: true, changed: false, version: version });
+        return json_({ ok: true, changed: true, version: version, bookings: withLock_(function () { return listMonths_(req.months); }) });
+      }
       case 'create':
-        return json_({ ok: true, booking: withLock_(function () { return saveBooking_(req.booking, true); }) });
       case 'update':
-        return json_({ ok: true, booking: withLock_(function () { return saveBooking_(req.booking, false); }) });
       case 'delete':
-        withLock_(function () { deleteBooking_(req.id); });
-        return json_({ ok: true });
+        // 保存後の一覧も同じ応答で返し、画面側の読み直し通信を省く
+        return json_(withLock_(function () {
+          const res = { ok: true };
+          if (req.action === 'delete') deleteBooking_(req.id);
+          else res.booking = saveBooking_(req.booking, req.action === 'create');
+          res.version = bumpVersion_();
+          if (req.months) res.bookings = listMonths_(req.months);
+          return res;
+        }));
       default:
         return json_({ ok: false, error: '不明な操作です: ' + req.action });
     }
@@ -147,6 +158,26 @@ function listBookings_(from, to) {
   return readLog_().rows
     .filter(function (r) { return (!from || r.date >= from) && (!to || r.date <= to); })
     .map(toBooking_);
+}
+
+function listMonths_(months) {
+  const set = {};
+  (months || []).forEach(function (m) { set[String(m)] = true; });
+  return readLog_().rows
+    .filter(function (r) { return set[r.date.slice(0, 7)]; })
+    .map(toBooking_);
+}
+
+// 予約データの版数。書き込みのたびに更新し、画面は版数が変わったときだけ読み直す
+function getVersion_() {
+  return PropertiesService.getScriptProperties().getProperty('DATA_VERSION') || '0';
+}
+
+function bumpVersion_() {
+  // 同じミリ秒に2回書いても必ず前より大きくなるようにする
+  const v = String(Math.max(Date.now(), Number(getVersion_()) + 1));
+  PropertiesService.getScriptProperties().setProperty('DATA_VERSION', v);
+  return v;
 }
 
 function validate_(d) {

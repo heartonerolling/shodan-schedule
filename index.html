@@ -251,9 +251,15 @@ dialog::backdrop{background:rgba(15,23,42,.45)}
 // 管理者がWebアプリのURLを固定したい場合はここに書く（合言葉は書かないこと：GitHubで公開されるため）
 const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbxKa7EY8nfoItsZLaOhc2aFFW2Q_yC_u3VPKD4emtXoHZg5-dMZF378a-dDuiKRVihjqQ/exec';
 
+// ?demo=1 を付けると本番につながず、ブラウザ内の仮データで試せる（&delay=2000 で通信の遅さも再現）
+const PARAMS = new URLSearchParams(location.search);
+const FORCE_DEMO = PARAMS.has('demo');
+const MOCK_DELAY = Number(PARAMS.get('delay')) || 120;
+
 const LS_SETTINGS = 'shodan.settings';
 const LS_MOCK = 'shodan.mockdb';
-const REFRESH_MS = 60 * 1000;
+const POLL_MS = 10 * 1000;   // 他の人の変更を確認する間隔（変更の有無だけ聞くので軽い）
+const FULL_EVERY = 6;        // 何回に1回は版数に関係なく読み直す（シートを直接編集した分も拾うため）
 const WD = ['日', '月', '火', '水', '木', '金', '土'];
 
 const $ = s => document.querySelector(s);
@@ -272,7 +278,7 @@ function el(tag, cls, text) {
 // ---------- 状態 ----------
 let cfg = { startHour: 8, endHour: 22, intervalMin: 30 };
 let members = [];
-let colors = { '赤': '#e06666', 'ピンク': '#f4b6c8', '灰': '#b7b7b7' };
+let colors = { '赤': '#e06666', 'ピンク': '#f4b6c8', '灰': '#b7b7b7', '緑': '#93c47d', '青': '#6fa8dc' };
 const cache = {};                 // 'yyyy-MM' -> bookings[]
 let selDate = fmtDate(new Date());
 let calMonth = monthKey(selDate);
@@ -290,12 +296,14 @@ const dayBookings = () => (cache[monthKey(selDate)] || []).filter(b => b.date ==
 const isDemo = () => !settings.url;
 
 function loadSettings() {
+  if (FORCE_DEMO) return { url: '', token: '' };
   let s = {};
   try { s = JSON.parse(localStorage.getItem(LS_SETTINGS) || '{}') || {}; } catch (e) {}
   if (!s.url && DEFAULT_API_URL) s.url = DEFAULT_API_URL;
   return { url: s.url || '', token: s.token || '' };
 }
 function saveSettings() {
+  if (FORCE_DEMO) return;
   try { localStorage.setItem(LS_SETTINGS, JSON.stringify(settings)); } catch (e) {}
 }
 
@@ -359,12 +367,16 @@ function mockDb() {
 }
 function mockSave() { try { localStorage.setItem(LS_MOCK, JSON.stringify(mockMem)); } catch (e) {} }
 async function mockApi(action, p) {
-  await new Promise(r => setTimeout(r, 120));
+  await new Promise(r => setTimeout(r, MOCK_DELAY));
   const db = mockDb();
   const fail = msg => { throw new Error(msg); };
+  const inMonths = ms => db.bookings.filter(b => ms.includes(monthKey(b.date))).map(b => ({ ...b }));
+  db.version = db.version || '1';
   switch (action) {
     case 'bootstrap': return { ok: true, members: db.members, colors, startHour: 8, endHour: 22, intervalMin: 30 };
-    case 'list': return { ok: true, bookings: db.bookings.filter(b => b.date >= p.from && b.date <= p.to).map(b => ({ ...b })) };
+    case 'sync':
+      if (!p.force && p.version === db.version) return { ok: true, changed: false, version: db.version };
+      return { ok: true, changed: true, version: db.version, bookings: inMonths(p.months) };
     case 'create':
     case 'update': {
       const b = { ...p.booking, title: p.booking.title.trim() };
@@ -373,34 +385,69 @@ async function mockApi(action, p) {
       const err = validateBooking(b, db.bookings); if (err) fail(err);
       if (action === 'create') db.bookings.push(b);
       else db.bookings[db.bookings.findIndex(x => x.id === b.id)] = b;
-      mockSave();
-      return { ok: true, booking: b };
+      db.version = String(Date.now()); mockSave();
+      return { ok: true, booking: b, version: db.version, bookings: inMonths(p.months || []) };
     }
     case 'delete':
-      db.bookings = db.bookings.filter(b => b.id !== p.id); mockSave();
-      return { ok: true };
+      db.bookings = db.bookings.filter(b => b.id !== p.id);
+      db.version = String(Date.now()); mockSave();
+      return { ok: true, version: db.version, bookings: inMonths(p.months || []) };
   }
   fail('不明な操作です');
 }
 
 // ---------- データ読み込み ----------
-async function loadMonth(mk) {
-  const res = await api('list', { from: mk + '-01', to: mk + '-31' });
-  cache[mk] = res.bookings;
+let dataVersion = null;  // サーバー側データの版数。変わったときだけ予約一覧を受け取る
+let inflight = 0;        // 保存中の件数。この間は定期確認の結果で画面を上書きしない
+const shownMonths = () => [...new Set([monthKey(selDate), calMonth])];
+const newerOrSame = v => Number(v || 0) >= Number(dataVersion || 0);
+
+function applyBookings(months, bookings, version) {
+  months.forEach(m => { cache[m] = []; });
+  bookings.forEach(b => { const m = monthKey(b.date); if (cache[m]) cache[m].push(b); });
+  if (version) dataVersion = version;
 }
-async function refresh(quiet) {
-  setSync('同期中…');
+
+// force=false なら版数の確認だけ（変更がなければシートを読まないので速い）
+async function refresh(quiet, force = true) {
+  const months = shownMonths();
+  if (!quiet) setSync('同期中…');
   try {
-    const months = new Set([monthKey(selDate), calMonth]);
-    await Promise.all([...months].map(loadMonth));
+    const res = await api('sync', { months, version: dataVersion, force });
+    if (res.changed && !inflight && !drag && newerOrSame(res.version)) {
+      applyBookings(months, res.bookings, res.version);
+      renderAll();
+    }
     const now = new Date();
-    setSync(`最終更新 ${pad(now.getHours())}:${pad(now.getMinutes())}`);
+    setSync(`最終更新 ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`);
   } catch (e) {
     setSync('同期エラー');
     if (!quiet) toast(e.message, 'error');
     if (e.code === 'auth') openSettings(e.message);
+    renderAll();
   }
+}
+
+// 保存系の操作：先に画面へ反映し、サーバーの返す最新一覧で確定。失敗したら元に戻す
+async function mutate(action, payload, applyLocal) {
+  const snapshot = Object.fromEntries(Object.entries(cache).map(([k, v]) => [k, v.slice()]));
+  inflight++;
+  applyLocal();
   renderAll();
+  try {
+    const months = shownMonths();
+    const res = await api(action, { ...payload, months });
+    if (res.bookings && newerOrSame(res.version)) applyBookings(months, res.bookings, res.version);
+    return res;
+  } catch (e) {
+    for (const k in cache) delete cache[k];
+    Object.assign(cache, snapshot);
+    setTimeout(() => refresh(true), 0); // 他の人の変更が原因の失敗もあるので最新を取り直す
+    throw e;
+  } finally {
+    inflight--;
+    renderAll();
+  }
 }
 async function bootstrap() {
   $('#demoBanner').hidden = !isDemo();
@@ -410,6 +457,7 @@ async function bootstrap() {
     colors = res.colors || colors;
     cfg = { startHour: res.startHour, endHour: res.endHour, intervalMin: res.intervalMin };
     for (const k in cache) delete cache[k];
+    dataVersion = null;
     await refresh();
   } catch (e) {
     setSync('未接続');
@@ -592,10 +640,7 @@ async function shiftCal(n) {
   const d = new Date(y, m - 1 + n, 1);
   calMonth = fmtDate(d).slice(0, 7);
   renderCal();
-  if (!cache[calMonth]) {
-    try { await loadMonth(calMonth); } catch (e) { toast(e.message, 'error'); }
-    renderCal();
-  }
+  if (!cache[calMonth]) await refresh();
 }
 
 // ---------- ドラッグ操作 ----------
@@ -702,32 +747,28 @@ tlEl.addEventListener('keydown', e => {
   if (node && (e.key === 'Enter' || e.key === ' ')) {
     e.preventDefault();
     const b = dayBookings().find(x => x.id === node.dataset.id);
-    if (b) openEditor(b, false);
+    if (b && !b._pending) openEditor(b, false);
   }
 });
 
 const stripBooking = b => ({ id: b.id, date: b.date, member: b.member, start: b.start, end: b.end, title: b.title, color: b.color });
 
-// ドラッグでの変更：先に画面へ反映し、失敗したら元に戻す
+// 画面上の予約一覧から id の予約を外し、b を「保存中」として入れる
+function placeLocal(removeId, b) {
+  for (const k in cache) cache[k] = cache[k].filter(x => x.id !== removeId);
+  if (b) (cache[monthKey(b.date)] ||= []).push({ ...b, _pending: true });
+}
+
+// ドラッグでの変更
 async function commitChange(upd) {
-  const mk = monthKey(upd.date);
-  const err = validateBooking(upd, cache[mk] || []);
+  const err = validateBooking(upd, cache[monthKey(upd.date)] || []);
   if (err) { toast(err, 'error'); renderTimeline(); return; }
-  const list = cache[mk];
-  const idx = list.findIndex(x => x.id === upd.id);
-  const prev = list[idx];
-  list[idx] = { ...upd, _pending: true };
-  renderTimeline();
   try {
-    await api('update', { booking: stripBooking(upd) });
-    list[idx] = stripBooking(upd);
+    await mutate('update', { booking: stripBooking(upd) }, () => placeLocal(upd.id, upd));
     toast(`${upd.member}　${upd.start}–${upd.end} に変更しました`);
   } catch (e) {
-    list[idx] = prev;
     toast(e.message, 'error');
   }
-  renderAll();
-  refresh(true);
 }
 
 // ---------- 予約ダイアログ ----------
@@ -780,11 +821,6 @@ $('#fStart').addEventListener('change', () => {
   if (t2i($('#fEnd').value) <= s) $('#fEnd').value = i2t(Math.min(slots(), s + len));
 });
 
-function setBusy(on) {
-  ['#saveBtn', '#delBtn', '#cancelBtn'].forEach(s => { $(s).disabled = on; });
-  $('#saveBtn').textContent = on ? '保存中…' : '保存';
-}
-
 $('#editForm').addEventListener('submit', async ev => {
   ev.preventDefault();
   const { orig, isNew } = editing;
@@ -799,33 +835,29 @@ $('#editForm').addEventListener('submit', async ev => {
   };
   const err = validateBooking(b, cache[monthKey(b.date)] || []);
   if (err) { $('#edError').textContent = err; return; }
-  setBusy(true);
+  // すぐ閉じて表に反映し、保存は裏で行う。失敗したら入力内容のまま入力画面を開き直す
+  editDlg.close();
+  if (b.date !== selDate) { selDate = b.date; calMonth = monthKey(b.date); }
+  const localId = isNew ? 'tmp-' + Date.now() : orig.id;
   try {
-    await api(isNew ? 'create' : 'update', { booking: b });
-    editDlg.close();
+    await mutate(isNew ? 'create' : 'update', { booking: b }, () => placeLocal(orig.id, { ...b, id: localId }));
     toast(isNew ? '登録しました' : '変更しました');
-    if (b.date !== selDate) { selDate = b.date; calMonth = monthKey(b.date); }
-    await refresh(true);
   } catch (e) {
+    toast(e.message, 'error');
+    openEditor({ ...b, id: orig.id }, isNew);
     $('#edError').textContent = e.message;
-  } finally {
-    setBusy(false);
   }
 });
 
 $('#delBtn').addEventListener('click', async () => {
   const b = editing.orig;
   if (!confirm(`「${b.title}」（${b.member} ${b.start}–${b.end}）を削除しますか？`)) return;
-  setBusy(true);
+  editDlg.close();
   try {
-    await api('delete', { id: b.id });
-    editDlg.close();
+    await mutate('delete', { id: b.id }, () => placeLocal(b.id, null));
     toast('削除しました');
-    await refresh(true);
   } catch (e) {
-    $('#edError').textContent = e.message;
-  } finally {
-    setBusy(false);
+    toast(e.message, 'error');
   }
 });
 $('#cancelBtn').addEventListener('click', () => editDlg.close());
@@ -882,15 +914,21 @@ $('#addBtn').addEventListener('click', () => {
   openEditor({ date: selDate, member: members[0] || '', start: i2t(s), end: i2t(Math.min(slots(), s + perHour())), title: '', color: firstColor() }, true);
 });
 
-const canAutoRefresh = () => !drag && !editDlg.open && !setDlg.open && document.visibilityState === 'visible';
-setInterval(() => { if (canAutoRefresh()) refresh(true); }, REFRESH_MS);
+const canAutoRefresh = () => !drag && !inflight && !setDlg.open && document.visibilityState === 'visible';
+let pollCount = 0, polling = false;
+async function poll(force) {
+  if (polling || !canAutoRefresh()) return;
+  polling = true;
+  try { await refresh(true, force); } finally { polling = false; }
+}
+setInterval(() => poll(++pollCount % FULL_EVERY === 0), POLL_MS);
 setInterval(renderNow, 60 * 1000);
 let resizeTimer = null;
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => { if (!drag) renderTimeline(); }, 150);
 });
-document.addEventListener('visibilitychange', () => { if (canAutoRefresh()) refresh(true); });
+document.addEventListener('visibilitychange', () => poll(false));
 
 renderAll();
 if (settings.url && !settings.token) openSettings('合言葉を入力してください');

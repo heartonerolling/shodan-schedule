@@ -1,0 +1,900 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>商談スケジュール</title>
+<style>
+:root{
+  --bg:#f5f6f8; --surface:#ffffff; --surface-2:#f0f2f5; --border:#e1e4e9; --border-strong:#c8ced6;
+  --text:#1f2329; --muted:#687080; --accent:#2563eb; --accent-weak:#e6eeff; --accent-text:#ffffff;
+  --sun:#d03b3b; --sat:#2563eb; --today:#dff3d8; --danger:#c62828; --danger-weak:#fdecec; --ok:#2e7d32;
+  --hour-line:#d3d8df; --half-line:#eef0f3; --lane-hover:#fafbfc; --now:#ef4444;
+  --shadow:0 10px 30px rgba(15,23,42,.18);
+  --slot-w:36px; --slot-min:32px; --row-h:54px; --name-w:108px; --head-h:34px;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#121417; --surface:#1b1e23; --surface-2:#23272e; --border:#2e333b; --border-strong:#3c424c;
+    --text:#e7e9ec; --muted:#9aa2ae; --accent:#5b8cff; --accent-weak:#1e2a45; --accent-text:#ffffff;
+    --sun:#ff7b7b; --sat:#7aa7ff; --today:#23402a; --danger:#ff6b6b; --danger-weak:#3a1f22; --ok:#66bb6a;
+    --hour-line:#363c45; --half-line:#262a31; --lane-hover:#1f2228; --now:#ff5a5a;
+    --shadow:0 10px 30px rgba(0,0,0,.5);
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--text);font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic UI","Meiryo",system-ui,sans-serif;font-size:14px;line-height:1.5}
+button{font:inherit;color:inherit;cursor:pointer}
+button:disabled{opacity:.5;cursor:default}
+
+/* ヘッダー */
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:30}
+.top h1{font-size:16px;margin:0;font-weight:700;white-space:nowrap}
+.btn{border:1px solid var(--border-strong);background:var(--surface);border-radius:8px;padding:6px 12px;line-height:1.3;white-space:nowrap}
+.btn:hover:not(:disabled){background:var(--surface-2)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-text)}
+.btn.primary:hover:not(:disabled){filter:brightness(1.08);background:var(--accent)}
+.btn.danger{color:var(--danger);border-color:var(--danger)}
+.btn.danger:hover:not(:disabled){background:var(--danger-weak)}
+.btn-group{display:inline-flex}
+.btn-group .btn{border-radius:0;margin-left:-1px}
+.btn-group .btn:first-child{border-radius:8px 0 0 8px;margin-left:0}
+.btn-group .btn:last-child{border-radius:0 8px 8px 0}
+.date-label{font-size:18px;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
+.date-input{border:1px solid var(--border-strong);border-radius:8px;padding:5px 8px;background:var(--surface);color:var(--text);font:inherit}
+.spacer{flex:1}
+.sync{color:var(--muted);font-size:12px;white-space:nowrap}
+.sun{color:var(--sun)} .sat{color:var(--sat)}
+
+.banner{margin:12px 16px 0;padding:10px 14px;border-radius:10px;background:var(--accent-weak);color:var(--text);font-size:13px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.banner[hidden]{display:none}
+.banner strong{color:var(--accent)}
+
+/* レイアウト */
+.layout{display:grid;grid-template-columns:250px minmax(0,1fr);gap:16px;padding:16px;align-items:start}
+aside{display:flex;flex-direction:column;gap:16px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px}
+.card h2{font-size:13px;margin:0 0 8px;color:var(--muted);font-weight:700}
+main.card{padding:0;overflow:hidden}
+
+/* ミニカレンダー */
+.cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.cal-head strong{font-size:15px;font-variant-numeric:tabular-nums}
+.icon-btn{border:none;background:none;border-radius:6px;padding:4px 8px;color:var(--muted)}
+.icon-btn:hover{background:var(--surface-2);color:var(--text)}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+.cal-wd{text-align:center;font-size:11px;color:var(--muted);padding:2px 0;font-weight:600}
+.cal-wd.sun{color:var(--sun)} .cal-wd.sat{color:var(--sat)}
+.cal-day{border:none;background:none;border-radius:8px;padding:3px 0;min-height:40px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:0}
+.cal-day:hover{background:var(--surface-2)}
+.cal-day .n{font-size:13px;font-variant-numeric:tabular-nums;width:24px;height:24px;line-height:24px;border-radius:50%;text-align:center}
+.cal-day .cnt{font-size:10px;color:var(--accent);font-weight:700;line-height:1.2}
+.cal-day.today .n{background:var(--today);font-weight:700}
+.cal-day.sel{background:var(--accent);color:var(--accent-text)}
+.cal-day.sel .n{background:transparent;color:var(--accent-text)}
+.cal-day.sel .cnt{color:var(--accent-text)}
+
+.legend{display:flex;flex-wrap:wrap;gap:8px 14px;font-size:13px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:14px;height:14px;border-radius:4px;display:inline-block}
+.help{margin:0;padding-left:18px;color:var(--muted);font-size:12px;display:grid;gap:4px}
+
+/* タイムライン */
+.tl-scroll{overflow:auto;max-height:calc(100vh - 140px)}
+.tl{position:relative;width:calc(var(--name-w) + var(--slots) * var(--slot-w));user-select:none;-webkit-user-select:none}
+.tl-head{display:flex;position:sticky;top:0;z-index:6;background:var(--surface-2);border-bottom:1px solid var(--border-strong);height:var(--head-h)}
+.tl-corner{position:sticky;left:0;z-index:7;width:var(--name-w);flex:none;background:var(--surface-2);border-right:1px solid var(--border-strong);display:flex;align-items:center;padding:0 12px;font-size:12px;color:var(--muted);font-weight:700}
+.tl-hours{position:relative;flex:none;width:calc(var(--slots) * var(--slot-w))}
+.tl-hour{position:absolute;top:0;bottom:0;padding-left:5px;border-left:1px solid var(--hour-line);font-size:12px;color:var(--muted);display:flex;align-items:center;font-variant-numeric:tabular-nums}
+.tl-row{display:flex;height:var(--row-h);border-bottom:1px solid var(--border)}
+.tl-name{position:sticky;left:0;z-index:5;width:var(--name-w);flex:none;background:var(--surface);border-right:1px solid var(--border-strong);display:flex;align-items:center;padding:0 12px;font-weight:700;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.tl-name.orphan{color:var(--muted);font-weight:400;font-size:12px}
+.lane{position:relative;flex:none;width:calc(var(--slots) * var(--slot-w));cursor:crosshair;
+  background-image:linear-gradient(to right,var(--hour-line) 1px,transparent 1px),linear-gradient(to right,var(--half-line) 1px,transparent 1px);
+  background-size:calc(var(--slot-w) * var(--per-hour)) 100%,var(--slot-w) 100%}
+.lane:hover{background-color:var(--lane-hover)}
+.bk{position:absolute;top:5px;bottom:5px;border-radius:6px;padding:3px 8px;color:#1f2329;font-size:12px;line-height:1.35;overflow:hidden;cursor:grab;box-shadow:0 1px 2px rgba(0,0,0,.18);z-index:1}
+.bk-title{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bk-time{font-size:11px;opacity:.75;font-variant-numeric:tabular-nums;white-space:nowrap}
+.bk .h-l,.bk .h-r{position:absolute;top:0;bottom:0;width:8px;cursor:ew-resize}
+.bk .h-l{left:0} .bk .h-r{right:0}
+.bk:hover .h-r{background:linear-gradient(to left,rgba(0,0,0,.12),transparent)}
+.bk:hover .h-l{background:linear-gradient(to right,rgba(0,0,0,.12),transparent)}
+.bk.dragging{pointer-events:none;opacity:.9;box-shadow:var(--shadow);z-index:4;cursor:grabbing}
+.bk.conflict{outline:2px solid var(--danger);outline-offset:1px}
+.bk.pending{opacity:.55}
+.bk:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.ghost{position:absolute;top:5px;bottom:5px;border-radius:6px;background:var(--accent-weak);border:2px dashed var(--accent);pointer-events:none;font-size:11px;padding:2px 6px;color:var(--accent);font-weight:700;white-space:nowrap;overflow:hidden;z-index:3}
+.ghost.conflict{border-color:var(--danger);background:var(--danger-weak);color:var(--danger)}
+.now-line{position:absolute;top:var(--head-h);bottom:0;width:2px;margin-left:-1px;background:var(--now);z-index:2;pointer-events:none}
+.now-line::before{content:"";position:absolute;top:-4px;left:-3px;width:8px;height:8px;border-radius:50%;background:var(--now)}
+.empty{padding:40px 16px;text-align:center;color:var(--muted)}
+.tl-foot{padding:8px 14px;border-top:1px solid var(--border);color:var(--muted);font-size:12px}
+
+/* ダイアログ */
+dialog{border:none;border-radius:14px;padding:0;width:min(460px,calc(100vw - 32px));background:var(--surface);color:var(--text);box-shadow:var(--shadow)}
+dialog::backdrop{background:rgba(15,23,42,.45)}
+.dlg-head{padding:18px 20px 0;font-size:16px;font-weight:700;margin:0}
+.dlg-body{padding:14px 20px;display:grid;gap:12px}
+.field label,.field .lbl{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:700}
+.field input,.field select{width:100%;padding:8px 10px;border:1px solid var(--border-strong);border-radius:8px;background:var(--surface);color:var(--text);font:inherit}
+.field input:focus,.field select:focus{outline:2px solid var(--accent);outline-offset:-1px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.swatches{display:flex;flex-wrap:wrap;gap:8px}
+.swatch{position:relative}
+.swatch input{position:absolute;opacity:0;width:1px;height:1px}
+.swatch span{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border:1px solid var(--border-strong);border-radius:999px;cursor:pointer}
+.swatch i{width:14px;height:14px;border-radius:50%}
+.swatch input:checked + span{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-weak);font-weight:700}
+.swatch input:focus-visible + span{outline:2px solid var(--accent)}
+.form-error{color:var(--danger);font-size:13px;margin:0;min-height:0}
+.form-error:empty{display:none}
+.note{font-size:12px;color:var(--muted);margin:0}
+.dlg-foot{display:flex;gap:8px;padding:4px 20px 18px;justify-content:flex-end;flex-wrap:wrap}
+.dlg-foot .left{margin-right:auto}
+
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:13px;box-shadow:var(--shadow);z-index:100;max-width:calc(100vw - 32px)}
+.toast.error{background:var(--danger);color:#fff}
+.toast[hidden]{display:none}
+
+@media (max-width: 860px){
+  :root{--name-w:78px;--slot-min:32px;--row-h:50px}
+  .sync{display:none}
+  .layout{grid-template-columns:minmax(0,1fr);padding:12px 16px}
+  main.card{order:-1}
+  .tl-scroll{max-height:none}
+  .date-label{font-size:16px;order:-1;width:100%}
+  .top h1{display:none}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <h1>商談スケジュール</h1>
+  <div class="btn-group">
+    <button class="btn" id="prevDay" aria-label="前日">◀</button>
+    <button class="btn" id="todayBtn">今日</button>
+    <button class="btn" id="nextDay" aria-label="翌日">▶</button>
+  </div>
+  <input type="date" class="date-input" id="datePick" aria-label="日付を選択">
+  <div class="date-label" id="dateLabel"></div>
+  <div class="spacer"></div>
+  <span class="sync" id="syncStatus"></span>
+  <button class="btn" id="reloadBtn">更新</button>
+  <button class="btn primary" id="addBtn">＋ 予約</button>
+  <button class="btn" id="settingsBtn" aria-label="設定">設定</button>
+</header>
+
+<div class="banner" id="demoBanner" hidden>
+  <span><strong>デモモード</strong>　データはこのブラウザ内だけに保存されます。「設定」でWebアプリのURLと合言葉を登録すると、スプレッドシートと連携します。</span>
+</div>
+
+<div class="layout">
+  <aside>
+    <section class="card">
+      <div class="cal-head">
+        <button class="icon-btn" id="calPrev" aria-label="前月">◀</button>
+        <strong id="calLabel"></strong>
+        <button class="icon-btn" id="calNext" aria-label="次月">▶</button>
+      </div>
+      <div class="cal-grid" id="calGrid"></div>
+    </section>
+    <section class="card">
+      <h2>色</h2>
+      <div class="legend" id="legend"></div>
+    </section>
+    <section class="card">
+      <h2>使い方</h2>
+      <ul class="help">
+        <li>空いている枠をドラッグ → 予約を作成</li>
+        <li>予約をドラッグ → 時間・担当者を移動</li>
+        <li>予約の左右の端をドラッグ → 時間を伸縮</li>
+        <li>予約をクリック → 編集・削除</li>
+        <li>スマホは枠をタップして入力</li>
+      </ul>
+    </section>
+  </aside>
+
+  <main class="card">
+    <div class="tl-scroll" id="tlScroll"><div class="tl" id="tl"></div></div>
+    <div class="tl-foot" id="tlFoot"></div>
+  </main>
+</div>
+
+<!-- 予約の追加・編集 -->
+<dialog id="editDlg">
+  <form id="editForm" novalidate>
+    <h2 class="dlg-head" id="edTitle">予約を追加</h2>
+    <div class="dlg-body">
+      <div class="row2">
+        <div class="field"><label for="fDate">日付</label><input type="date" id="fDate" required></div>
+        <div class="field"><label for="fMember">担当者</label><select id="fMember" required></select></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label for="fStart">開始時刻</label><select id="fStart"></select></div>
+        <div class="field"><label for="fEnd">終了時刻</label><select id="fEnd"></select></div>
+      </div>
+      <div class="field"><label for="fTitle">商談内容</label><input type="text" id="fTitle" maxlength="200" placeholder="例：A社 提案打合せ" autocomplete="off"></div>
+      <div class="field"><span class="lbl">色</span><div class="swatches" id="fColors"></div></div>
+      <p class="form-error" id="edError"></p>
+    </div>
+    <div class="dlg-foot">
+      <button type="button" class="btn danger left" id="delBtn">削除</button>
+      <button type="button" class="btn" id="cancelBtn">キャンセル</button>
+      <button type="submit" class="btn primary" id="saveBtn">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- 接続設定 -->
+<dialog id="setDlg">
+  <form id="setForm" novalidate>
+    <h2 class="dlg-head">接続設定</h2>
+    <div class="dlg-body">
+      <div class="field"><label for="sUrl">WebアプリのURL</label><input type="url" id="sUrl" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off"></div>
+      <div class="field"><label for="sToken">合言葉</label><input type="text" id="sToken" autocomplete="off"></div>
+      <p class="note">設定はこのブラウザに保存されます。URLを空にするとデモモードになります。</p>
+      <p class="form-error" id="setError"></p>
+    </div>
+    <div class="dlg-foot">
+      <button type="button" class="btn left" id="setCancel">閉じる</button>
+      <button type="submit" class="btn primary" id="setSave">保存して接続</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" hidden></div>
+
+<script>
+// 管理者がWebアプリのURLを固定したい場合はここに書く（合言葉は書かないこと：GitHubで公開されるため）
+const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbxKa7EY8nfoItsZLaOhc2aFFW2Q_yC_u3VPKD4emtXoHZg5-dMZF378a-dDuiKRVihjqQ/exec';
+
+const LS_SETTINGS = 'shodan.settings';
+const LS_MOCK = 'shodan.mockdb';
+const REFRESH_MS = 60 * 1000;
+const WD = ['日', '月', '火', '水', '木', '金', '土'];
+
+const $ = s => document.querySelector(s);
+const pad = n => String(n).padStart(2, '0');
+const fmtDate = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const parseDate = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+const monthKey = s => s.slice(0, 7);
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+// ---------- 状態 ----------
+let cfg = { startHour: 8, endHour: 22, intervalMin: 30 };
+let members = [];
+let colors = { '赤': '#e06666', 'ピンク': '#f4b6c8', '灰': '#b7b7b7' };
+const cache = {};                 // 'yyyy-MM' -> bookings[]
+let selDate = fmtDate(new Date());
+let calMonth = monthKey(selDate);
+let settings = loadSettings();
+let editing = null;
+let drag = null;
+
+const slots = () => (cfg.endHour - cfg.startHour) * 60 / cfg.intervalMin;
+const perHour = () => 60 / cfg.intervalMin;
+const t2i = t => { const [h, m] = t.split(':').map(Number); return (h * 60 + m - cfg.startHour * 60) / cfg.intervalMin; };
+const i2t = i => { const min = cfg.startHour * 60 + i * cfg.intervalMin; return pad(Math.floor(min / 60)) + ':' + pad(min % 60); };
+const slotW = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--slot-w')) || 36;
+const firstColor = () => Object.values(colors)[0];
+const dayBookings = () => (cache[monthKey(selDate)] || []).filter(b => b.date === selDate);
+const isDemo = () => !settings.url;
+
+function loadSettings() {
+  let s = {};
+  try { s = JSON.parse(localStorage.getItem(LS_SETTINGS) || '{}') || {}; } catch (e) {}
+  if (!s.url && DEFAULT_API_URL) s.url = DEFAULT_API_URL;
+  return { url: s.url || '', token: s.token || '' };
+}
+function saveSettings() {
+  try { localStorage.setItem(LS_SETTINGS, JSON.stringify(settings)); } catch (e) {}
+}
+
+// ---------- 検証（サーバーと同じルール。サーバー側でも必ず再チェックされる） ----------
+function findConflict(b, list) {
+  return list.find(o => o.id !== b.id && o.date === b.date && o.member === b.member && o.start < b.end && b.start < o.end);
+}
+function validateBooking(b, list) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(b.date)) return '日付を入力してください';
+  if (!members.includes(b.member)) return '担当者を選んでください（担当者マスタにいない人には登録できません）';
+  if (!b.title.trim()) return '商談内容を入力してください';
+  const s = t2i(b.start), e = t2i(b.end);
+  if (!Number.isInteger(s) || !Number.isInteger(e) || s < 0 || e > slots()) return '時刻が範囲外です';
+  if (s >= e) return '終了時刻は開始時刻より後にしてください';
+  const c = findConflict(b, list);
+  if (c) return `${c.member}さんは ${c.start}〜${c.end} に「${c.title}」が入っています`;
+  return null;
+}
+
+// ---------- API ----------
+async function api(action, payload = {}) {
+  if (isDemo()) return mockApi(action, payload);
+  let res;
+  try {
+    // text/plain にすると CORS のプリフライトが発生せず Apps Script にそのまま届く
+    res = await fetch(settings.url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action, token: settings.token, ...payload })
+    });
+  } catch (e) {
+    throw new Error('サーバーに接続できません。URLとWebアプリの公開設定（アクセス：全員）を確認してください');
+  }
+  if (!res.ok) throw new Error(`通信エラー（${res.status}）`);
+  let data;
+  try { data = await res.json(); } catch (e) {
+    throw new Error('応答を読み取れません。Webアプリの公開設定（アクセス：全員）を確認してください');
+  }
+  if (!data.ok) { const err = new Error(data.error || 'エラーが発生しました'); err.code = data.code; throw err; }
+  return data;
+}
+
+// デモ用：ブラウザ内に保存する疑似API
+let mockMem = null;
+function mockDb() {
+  if (mockMem) return mockMem;
+  try { mockMem = JSON.parse(localStorage.getItem(LS_MOCK) || 'null'); } catch (e) {}
+  if (!mockMem) {
+    const t = fmtDate(new Date());
+    mockMem = {
+      members: ['田中', '佐藤', '鈴木', '高橋'],
+      bookings: [
+        { id: 'd1', date: t, member: '田中', start: '10:00', end: '11:30', title: 'A社 定例', color: '#e06666' },
+        { id: 'd2', date: t, member: '田中', start: '14:00', end: '15:00', title: 'B社 見積説明', color: '#f4b6c8' },
+        { id: 'd3', date: t, member: '佐藤', start: '09:00', end: '10:00', title: '社内MTG', color: '#b7b7b7' },
+        { id: 'd4', date: t, member: '鈴木', start: '13:00', end: '16:30', title: 'C社 訪問', color: '#e06666' }
+      ]
+    };
+  }
+  return mockMem;
+}
+function mockSave() { try { localStorage.setItem(LS_MOCK, JSON.stringify(mockMem)); } catch (e) {} }
+async function mockApi(action, p) {
+  await new Promise(r => setTimeout(r, 120));
+  const db = mockDb();
+  const fail = msg => { throw new Error(msg); };
+  switch (action) {
+    case 'bootstrap': return { ok: true, members: db.members, colors, startHour: 8, endHour: 22, intervalMin: 30 };
+    case 'list': return { ok: true, bookings: db.bookings.filter(b => b.date >= p.from && b.date <= p.to).map(b => ({ ...b })) };
+    case 'create':
+    case 'update': {
+      const b = { ...p.booking, title: p.booking.title.trim() };
+      if (action === 'create') b.id = 'd' + Date.now();
+      else if (!db.bookings.some(x => x.id === b.id)) fail('この予約は削除されています。画面を更新してください');
+      const err = validateBooking(b, db.bookings); if (err) fail(err);
+      if (action === 'create') db.bookings.push(b);
+      else db.bookings[db.bookings.findIndex(x => x.id === b.id)] = b;
+      mockSave();
+      return { ok: true, booking: b };
+    }
+    case 'delete':
+      db.bookings = db.bookings.filter(b => b.id !== p.id); mockSave();
+      return { ok: true };
+  }
+  fail('不明な操作です');
+}
+
+// ---------- データ読み込み ----------
+async function loadMonth(mk) {
+  const res = await api('list', { from: mk + '-01', to: mk + '-31' });
+  cache[mk] = res.bookings;
+}
+async function refresh(quiet) {
+  setSync('同期中…');
+  try {
+    const months = new Set([monthKey(selDate), calMonth]);
+    await Promise.all([...months].map(loadMonth));
+    const now = new Date();
+    setSync(`最終更新 ${pad(now.getHours())}:${pad(now.getMinutes())}`);
+  } catch (e) {
+    setSync('同期エラー');
+    if (!quiet) toast(e.message, 'error');
+    if (e.code === 'auth') openSettings(e.message);
+  }
+  renderAll();
+}
+async function bootstrap() {
+  $('#demoBanner').hidden = !isDemo();
+  try {
+    const res = await api('bootstrap');
+    members = res.members || [];
+    colors = res.colors || colors;
+    cfg = { startHour: res.startHour, endHour: res.endHour, intervalMin: res.intervalMin };
+    for (const k in cache) delete cache[k];
+    await refresh();
+  } catch (e) {
+    setSync('未接続');
+    renderAll();
+    openSettings(e.message);
+  }
+}
+function setSync(t) { $('#syncStatus').textContent = t; }
+
+// ---------- 描画 ----------
+function renderAll() {
+  renderHeader();
+  renderCal();
+  renderLegend();
+  renderTimeline();
+}
+
+function renderHeader() {
+  const d = parseDate(selDate), wd = d.getDay();
+  const lbl = $('#dateLabel');
+  lbl.textContent = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+  const w = el('span', wd === 0 ? 'sun' : wd === 6 ? 'sat' : '', `（${WD[wd]}）`);
+  lbl.append(w);
+  $('#datePick').value = selDate;
+}
+
+function renderCal() {
+  const [y, m] = calMonth.split('-').map(Number);
+  $('#calLabel').textContent = `${y}年${m}月`;
+  const grid = $('#calGrid');
+  grid.innerHTML = '';
+  WD.forEach((w, i) => grid.append(el('div', 'cal-wd' + (i === 0 ? ' sun' : i === 6 ? ' sat' : ''), w)));
+  const start = new Date(y, m - 1, 1).getDay();
+  const days = new Date(y, m, 0).getDate();
+  const counts = {};
+  (cache[calMonth] || []).forEach(b => { counts[b.date] = (counts[b.date] || 0) + 1; });
+  const today = fmtDate(new Date());
+  for (let i = 0; i < start; i++) grid.append(el('div'));
+  for (let d = 1; d <= days; d++) {
+    const ds = `${calMonth}-${pad(d)}`;
+    const wd = (start + d - 1) % 7;
+    const btn = el('button', 'cal-day' + (wd === 0 ? ' sun' : wd === 6 ? ' sat' : '') + (ds === today ? ' today' : '') + (ds === selDate ? ' sel' : ''));
+    btn.type = 'button';
+    btn.append(el('span', 'n', String(d)));
+    btn.append(el('span', 'cnt', counts[ds] ? `${counts[ds]}件` : ''));
+    btn.setAttribute('aria-label', `${m}月${d}日 予約${counts[ds] || 0}件`);
+    btn.addEventListener('click', () => setDate(ds));
+    grid.append(btn);
+  }
+}
+
+function renderLegend() {
+  const lg = $('#legend');
+  lg.innerHTML = '';
+  Object.entries(colors).forEach(([name, hex]) => {
+    const s = el('span'); const i = el('i'); i.style.background = hex;
+    s.append(i, document.createTextNode(name)); lg.append(s);
+  });
+}
+
+function place(node, s, e) {
+  const W = slotW();
+  node.style.left = (s * W + 1) + 'px';
+  node.style.width = Math.max(4, (e - s) * W - 2) + 'px';
+}
+
+function bookingEl(b) {
+  const d = el('div', 'bk' + (b._pending ? ' pending' : ''));
+  d.dataset.id = b.id;
+  d.tabIndex = 0;
+  d.style.background = b.color;
+  place(d, t2i(b.start), t2i(b.end));
+  d.append(el('span', 'h-l'), el('div', 'bk-title', b.title), el('div', 'bk-time', `${b.start}–${b.end}`), el('span', 'h-r'));
+  d.title = `${b.title}\n${b.member}　${b.start}–${b.end}`;
+  d.setAttribute('role', 'button');
+  d.setAttribute('aria-label', `${b.member} ${b.start}から${b.end} ${b.title}`);
+  return d;
+}
+
+// 画面幅に合わせて1枠の幅を広げる（狭い画面では最小幅を保って横スクロール）
+function fitSlotWidth() {
+  const css = getComputedStyle(document.documentElement);
+  const min = parseFloat(css.getPropertyValue('--slot-min')) || 36;
+  const nameW = parseFloat(css.getPropertyValue('--name-w')) || 108;
+  const avail = $('#tlScroll').clientWidth - nameW;
+  document.documentElement.style.setProperty('--slot-w', Math.max(min, Math.floor(avail / slots())) + 'px');
+}
+
+// 日付を切り替えたときだけ、現在時刻（今日）または最初の予約が見える位置までスクロール
+let scrolledFor = null;
+function autoScroll(list) {
+  if (scrolledFor === selDate || !cache[monthKey(selDate)]) return;
+  scrolledFor = selDate;
+  const sc = $('#tlScroll');
+  if (sc.scrollWidth <= sc.clientWidth) return;
+  const now = new Date();
+  let idx;
+  if (fmtDate(now) === selDate) {
+    const nowIdx = (now.getHours() * 60 + now.getMinutes() - cfg.startHour * 60) / cfg.intervalMin;
+    // 進行中の予約はタイトルが見えるよう開始位置から表示
+    const running = list.filter(b => t2i(b.start) <= nowIdx && nowIdx < t2i(b.end)).map(b => t2i(b.start));
+    idx = Math.min(nowIdx - perHour(), ...running);
+  } else if (list.length) idx = Math.min(...list.map(b => t2i(b.start))) - 1;
+  else idx = perHour(); // 9:00付近
+  sc.scrollLeft = Math.max(0, idx) * slotW();
+}
+
+function renderTimeline() {
+  const S = slots();
+  const root = document.documentElement.style;
+  root.setProperty('--slots', S);
+  root.setProperty('--per-hour', perHour());
+  fitSlotWidth();
+  const W = slotW();
+  const tl = $('#tl');
+  tl.innerHTML = '';
+
+  const list = dayBookings();
+  // 担当者マスタから消えた人の予約も隠さず表示する
+  const rowMembers = [...members];
+  list.forEach(b => { if (!rowMembers.includes(b.member)) rowMembers.push(b.member); });
+
+  const head = el('div', 'tl-head');
+  head.append(el('div', 'tl-corner', '担当者'));
+  const hours = el('div', 'tl-hours');
+  for (let i = 0; i < S; i += perHour()) {
+    const h = el('div', 'tl-hour', `${Number(i2t(i).slice(0, 2))}:00`);
+    h.style.left = (i * W) + 'px';
+    h.style.width = (perHour() * W) + 'px';
+    hours.append(h);
+  }
+  head.append(hours);
+  tl.append(head);
+
+  if (rowMembers.length === 0) {
+    tl.append(el('div', 'empty', '担当者がいません。スプレッドシートの「担当者マスタ」に担当者を登録してください。'));
+  }
+  rowMembers.forEach(m => {
+    const row = el('div', 'tl-row');
+    row.dataset.member = m;
+    const orphan = !members.includes(m);
+    const name = el('div', 'tl-name' + (orphan ? ' orphan' : ''), m);
+    if (orphan) name.title = '担当者マスタにいない担当者です';
+    row.append(name);
+    const lane = el('div', 'lane');
+    lane.dataset.member = m;
+    list.filter(b => b.member === m).forEach(b => lane.append(bookingEl(b)));
+    row.append(lane);
+    tl.append(row);
+  });
+
+  renderNow();
+  autoScroll(list);
+  $('#tlFoot').textContent = list.length ? `この日の予約：${list.length}件` : 'この日の予約はまだありません。空いている枠をドラッグして登録できます。';
+}
+
+function renderNow() {
+  const tl = $('#tl');
+  tl.querySelector('.now-line')?.remove();
+  const now = new Date();
+  if (fmtDate(now) !== selDate) return;
+  const idx = (now.getHours() * 60 + now.getMinutes() - cfg.startHour * 60) / cfg.intervalMin;
+  if (idx < 0 || idx > slots()) return;
+  const line = el('div', 'now-line');
+  const nameW = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--name-w')) || 108;
+  line.style.left = (nameW + idx * slotW()) + 'px';
+  tl.append(line);
+}
+
+// ---------- 日付操作 ----------
+async function setDate(ds) {
+  selDate = ds;
+  calMonth = monthKey(ds);
+  renderAll();
+  if (!cache[calMonth]) await refresh();
+}
+function shiftDay(n) { const d = parseDate(selDate); d.setDate(d.getDate() + n); setDate(fmtDate(d)); }
+async function shiftCal(n) {
+  const [y, m] = calMonth.split('-').map(Number);
+  const d = new Date(y, m - 1 + n, 1);
+  calMonth = fmtDate(d).slice(0, 7);
+  renderCal();
+  if (!cache[calMonth]) {
+    try { await loadMonth(calMonth); } catch (e) { toast(e.message, 'error'); }
+    renderCal();
+  }
+}
+
+// ---------- ドラッグ操作 ----------
+const tlEl = $('#tl');
+function slotAt(lane, x) {
+  const r = lane.getBoundingClientRect();
+  return clamp(Math.floor((x - r.left) / slotW()), 0, slots() - 1);
+}
+
+tlEl.addEventListener('pointerdown', e => {
+  if (e.button !== 0) return;
+  const lane = e.target.closest('.lane');
+  if (!lane) return;
+  const touch = e.pointerType === 'touch';
+  const bkNode = e.target.closest('.bk');
+  if (bkNode) {
+    const b = dayBookings().find(x => x.id === bkNode.dataset.id);
+    if (!b || b._pending) return;
+    const cl = e.target.classList;
+    const s = t2i(b.start), en = t2i(b.end);
+    drag = { kind: 'bk', mode: cl.contains('h-l') ? 'l' : cl.contains('h-r') ? 'r' : 'move', b, node: bkNode,
+      x0: e.clientX, y0: e.clientY, moved: false, touch, s0: s, e0: en, s, e: en, member: b.member };
+  } else {
+    const s = slotAt(lane, e.clientX);
+    drag = { kind: 'new', lane, member: lane.dataset.member, a: s, c: s, x0: e.clientX, y0: e.clientY, moved: false, touch };
+  }
+  // タッチはスクロールを優先し、タップのみ扱う
+  if (!touch) { e.preventDefault(); tlEl.setPointerCapture(e.pointerId); }
+});
+
+tlEl.addEventListener('pointermove', e => {
+  if (!drag || drag.touch) return;
+  const dx = e.clientX - drag.x0, dy = e.clientY - drag.y0;
+  if (!drag.moved) {
+    if (Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
+    drag.moved = true;
+    if (drag.kind === 'bk') drag.node.classList.add('dragging');
+  }
+  const S = slots();
+  if (drag.kind === 'new') {
+    drag.c = slotAt(drag.lane, e.clientX);
+    drawGhost();
+    return;
+  }
+  const ds = Math.round(dx / slotW());
+  let s = drag.s0, en = drag.e0, member = drag.member;
+  if (drag.mode === 'move') {
+    const len = en - s;
+    s = clamp(s + ds, 0, S - len);
+    en = s + len;
+    const row = document.elementFromPoint(e.clientX, e.clientY)?.closest('.tl-row');
+    if (row) member = row.dataset.member;
+  } else if (drag.mode === 'l') {
+    s = clamp(s + ds, 0, en - 1);
+  } else {
+    en = clamp(en + ds, s + 1, S);
+  }
+  Object.assign(drag, { s, e: en, member });
+  const lane = tlEl.querySelector(`.lane[data-member="${CSS.escape(member)}"]`);
+  if (lane && drag.node.parentNode !== lane) lane.append(drag.node);
+  place(drag.node, s, en);
+  drag.node.querySelector('.bk-time').textContent = `${i2t(s)}–${i2t(en)}`;
+  drag.node.classList.toggle('conflict', !!findConflict({ ...drag.b, start: i2t(s), end: i2t(en), member }, dayBookings()));
+});
+
+function drawGhost() {
+  if (!drag.ghost) { drag.ghost = el('div', 'ghost'); drag.lane.append(drag.ghost); }
+  const s = Math.min(drag.a, drag.c), en = Math.max(drag.a, drag.c) + 1;
+  place(drag.ghost, s, en);
+  drag.ghost.textContent = `${i2t(s)}–${i2t(en)}`;
+  drag.ghost.classList.toggle('conflict', !!findConflict({ id: null, date: selDate, member: drag.member, start: i2t(s), end: i2t(en) }, dayBookings()));
+}
+
+tlEl.addEventListener('pointerup', e => {
+  if (!drag) return;
+  const d = drag; drag = null;
+  d.ghost?.remove();
+  if (d.touch && (Math.abs(e.clientX - d.x0) > 8 || Math.abs(e.clientY - d.y0) > 8)) return;
+  if (d.kind === 'new') {
+    let s, en;
+    if (!d.moved) { s = d.a; en = Math.min(slots(), s + perHour()); }
+    else { s = Math.min(d.a, d.c); en = Math.max(d.a, d.c) + 1; }
+    const c = findConflict({ id: null, date: selDate, member: d.member, start: i2t(s), end: i2t(en) }, dayBookings());
+    if (d.moved && c) { toast(`${c.member}さんは ${c.start}〜${c.end} に「${c.title}」が入っています`, 'error'); return; }
+    if (c) en = t2i(c.start); // クリック時は次の予約の手前までに縮める
+    openEditor({ date: selDate, member: d.member, start: i2t(s), end: i2t(en), title: '', color: firstColor() }, true);
+    return;
+  }
+  if (!d.moved) { openEditor(d.b, false); return; }
+  if (d.s === d.s0 && d.e === d.e0 && d.member === d.b.member) { renderTimeline(); return; }
+  commitChange({ ...d.b, start: i2t(d.s), end: i2t(d.e), member: d.member });
+});
+
+tlEl.addEventListener('pointercancel', () => {
+  if (!drag) return;
+  drag.ghost?.remove();
+  const wasBk = drag.kind === 'bk' && drag.moved;
+  drag = null;
+  if (wasBk) renderTimeline();
+});
+
+tlEl.addEventListener('keydown', e => {
+  const node = e.target.closest('.bk');
+  if (node && (e.key === 'Enter' || e.key === ' ')) {
+    e.preventDefault();
+    const b = dayBookings().find(x => x.id === node.dataset.id);
+    if (b) openEditor(b, false);
+  }
+});
+
+const stripBooking = b => ({ id: b.id, date: b.date, member: b.member, start: b.start, end: b.end, title: b.title, color: b.color });
+
+// ドラッグでの変更：先に画面へ反映し、失敗したら元に戻す
+async function commitChange(upd) {
+  const mk = monthKey(upd.date);
+  const err = validateBooking(upd, cache[mk] || []);
+  if (err) { toast(err, 'error'); renderTimeline(); return; }
+  const list = cache[mk];
+  const idx = list.findIndex(x => x.id === upd.id);
+  const prev = list[idx];
+  list[idx] = { ...upd, _pending: true };
+  renderTimeline();
+  try {
+    await api('update', { booking: stripBooking(upd) });
+    list[idx] = stripBooking(upd);
+    toast(`${upd.member}　${upd.start}–${upd.end} に変更しました`);
+  } catch (e) {
+    list[idx] = prev;
+    toast(e.message, 'error');
+  }
+  renderAll();
+  refresh(true);
+}
+
+// ---------- 予約ダイアログ ----------
+const editDlg = $('#editDlg');
+
+function openEditor(b, isNew) {
+  editing = { orig: b, isNew };
+  $('#edTitle').textContent = isNew ? '予約を追加' : '予約を編集';
+  $('#edError').textContent = '';
+  $('#delBtn').hidden = isNew;
+  $('#fDate').value = b.date;
+
+  const ms = $('#fMember');
+  ms.innerHTML = '';
+  const opts = [...members];
+  if (b.member && !opts.includes(b.member)) opts.push(b.member);
+  if (!b.member) ms.append(new Option('選択してください', ''));
+  opts.forEach(m => ms.append(new Option(m, m)));
+  ms.value = b.member || '';
+
+  const S = slots();
+  const fs = $('#fStart'), fe = $('#fEnd');
+  fs.innerHTML = ''; fe.innerHTML = '';
+  for (let i = 0; i < S; i++) fs.append(new Option(i2t(i), i2t(i)));
+  for (let i = 1; i <= S; i++) fe.append(new Option(i2t(i), i2t(i)));
+  fs.value = b.start; fe.value = b.end;
+
+  $('#fTitle').value = b.title || '';
+  const sw = $('#fColors');
+  sw.innerHTML = '';
+  const known = Object.values(colors).includes(b.color) ? b.color : firstColor();
+  Object.entries(colors).forEach(([name, hex]) => {
+    const lab = el('label', 'swatch');
+    const inp = el('input'); inp.type = 'radio'; inp.name = 'fColor'; inp.value = hex; inp.checked = hex === known;
+    const span = el('span'); const dot = el('i'); dot.style.background = hex;
+    span.append(dot, document.createTextNode(name));
+    lab.append(inp, span);
+    sw.append(lab);
+  });
+
+  editDlg.showModal();
+  setTimeout(() => $('#fTitle').focus(), 0);
+}
+
+// 開始時刻を変えたら、長さを保ったまま終了時刻もずらす
+$('#fStart').addEventListener('change', () => {
+  const o = editing.orig;
+  const len = Math.max(1, t2i(o.end) - t2i(o.start));
+  const s = t2i($('#fStart').value);
+  if (t2i($('#fEnd').value) <= s) $('#fEnd').value = i2t(Math.min(slots(), s + len));
+});
+
+function setBusy(on) {
+  ['#saveBtn', '#delBtn', '#cancelBtn'].forEach(s => { $(s).disabled = on; });
+  $('#saveBtn').textContent = on ? '保存中…' : '保存';
+}
+
+$('#editForm').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  const { orig, isNew } = editing;
+  const b = {
+    id: isNew ? null : orig.id,
+    date: $('#fDate').value,
+    member: $('#fMember').value,
+    start: $('#fStart').value,
+    end: $('#fEnd').value,
+    title: $('#fTitle').value.trim(),
+    color: (document.querySelector('input[name="fColor"]:checked') || {}).value || firstColor()
+  };
+  const err = validateBooking(b, cache[monthKey(b.date)] || []);
+  if (err) { $('#edError').textContent = err; return; }
+  setBusy(true);
+  try {
+    await api(isNew ? 'create' : 'update', { booking: b });
+    editDlg.close();
+    toast(isNew ? '登録しました' : '変更しました');
+    if (b.date !== selDate) { selDate = b.date; calMonth = monthKey(b.date); }
+    await refresh(true);
+  } catch (e) {
+    $('#edError').textContent = e.message;
+  } finally {
+    setBusy(false);
+  }
+});
+
+$('#delBtn').addEventListener('click', async () => {
+  const b = editing.orig;
+  if (!confirm(`「${b.title}」（${b.member} ${b.start}–${b.end}）を削除しますか？`)) return;
+  setBusy(true);
+  try {
+    await api('delete', { id: b.id });
+    editDlg.close();
+    toast('削除しました');
+    await refresh(true);
+  } catch (e) {
+    $('#edError').textContent = e.message;
+  } finally {
+    setBusy(false);
+  }
+});
+$('#cancelBtn').addEventListener('click', () => editDlg.close());
+
+// ---------- 設定ダイアログ ----------
+const setDlg = $('#setDlg');
+function openSettings(msg) {
+  if (setDlg.open) { $('#setError').textContent = msg || ''; return; }
+  $('#sUrl').value = settings.url;
+  $('#sToken').value = settings.token;
+  $('#setError').textContent = msg || '';
+  setDlg.showModal();
+}
+$('#setForm').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  const url = $('#sUrl').value.trim();
+  const token = $('#sToken').value.trim();
+  if (url && !/^https:\/\/script\.google(usercontent)?\.com\//.test(url)) {
+    $('#setError').textContent = 'Apps Script のWebアプリURL（https://script.google.com/macros/s/…/exec）を入力してください';
+    return;
+  }
+  if (url && !token) { $('#setError').textContent = '合言葉を入力してください'; return; }
+  settings = { url, token };
+  saveSettings();
+  setDlg.close();
+  await bootstrap();
+});
+$('#setCancel').addEventListener('click', () => setDlg.close());
+
+// ---------- トースト ----------
+let toastTimer = null;
+function toast(msg, kind) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.className = 'toast' + (kind === 'error' ? ' error' : '');
+  t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.hidden = true; }, kind === 'error' ? 6000 : 2500);
+}
+
+// ---------- イベント ----------
+$('#prevDay').addEventListener('click', () => shiftDay(-1));
+$('#nextDay').addEventListener('click', () => shiftDay(1));
+$('#todayBtn').addEventListener('click', () => setDate(fmtDate(new Date())));
+$('#datePick').addEventListener('change', e => { if (e.target.value) setDate(e.target.value); });
+$('#calPrev').addEventListener('click', () => shiftCal(-1));
+$('#calNext').addEventListener('click', () => shiftCal(1));
+$('#reloadBtn').addEventListener('click', () => refresh());
+$('#settingsBtn').addEventListener('click', () => openSettings());
+$('#addBtn').addEventListener('click', () => {
+  const now = new Date();
+  let s = 2 * perHour(); // 既定 10:00
+  if (fmtDate(now) === selDate) s = clamp(Math.ceil(((now.getHours() * 60 + now.getMinutes()) - cfg.startHour * 60) / cfg.intervalMin), 0, slots() - 1);
+  openEditor({ date: selDate, member: members[0] || '', start: i2t(s), end: i2t(Math.min(slots(), s + perHour())), title: '', color: firstColor() }, true);
+});
+
+const canAutoRefresh = () => !drag && !editDlg.open && !setDlg.open && document.visibilityState === 'visible';
+setInterval(() => { if (canAutoRefresh()) refresh(true); }, REFRESH_MS);
+setInterval(renderNow, 60 * 1000);
+let resizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { if (!drag) renderTimeline(); }, 150);
+});
+document.addEventListener('visibilitychange', () => { if (canAutoRefresh()) refresh(true); });
+
+renderAll();
+if (settings.url && !settings.token) openSettings('合言葉を入力してください');
+else bootstrap();
+</script>
+</body>
+</html>

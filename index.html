@@ -172,7 +172,7 @@ dialog::backdrop{background:rgba(15,23,42,.45)}
 </header>
 
 <div class="banner" id="demoBanner" hidden>
-  <span><strong>デモモード</strong>　データはこのブラウザ内だけに保存されます。「設定」でWebアプリのURLと合言葉を登録すると、スプレッドシートと連携します。</span>
+  <span><strong>デモモード</strong>　データはこのブラウザ内だけに保存されます。「設定」でWebアプリのURLを登録すると、スプレッドシートと連携します。</span>
 </div>
 
 <div class="layout">
@@ -238,7 +238,7 @@ dialog::backdrop{background:rgba(15,23,42,.45)}
     <h2 class="dlg-head">接続設定</h2>
     <div class="dlg-body">
       <div class="field"><label for="sUrl">WebアプリのURL</label><input type="url" id="sUrl" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off"></div>
-      <div class="field"><label for="sToken">合言葉</label><input type="text" id="sToken" autocomplete="off"></div>
+      <div class="field"><label for="sToken">合言葉（サーバー側で設定している場合のみ）</label><input type="text" id="sToken" autocomplete="off"></div>
       <p class="note">設定はこのブラウザに保存されます。URLを空にするとデモモードになります。</p>
       <p class="form-error" id="setError"></p>
     </div>
@@ -252,7 +252,7 @@ dialog::backdrop{background:rgba(15,23,42,.45)}
 <div class="toast" id="toast" hidden></div>
 
 <script>
-// 管理者がWebアプリのURLを固定したい場合はここに書く（合言葉は書かないこと：GitHubで公開されるため）
+// WebアプリのURL。これが入っていれば、開くだけで（入力なしで）スプレッドシートにつながる
 const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbxKa7EY8nfoItsZLaOhc2aFFW2Q_yC_u3VPKD4emtXoHZg5-dMZF378a-dDuiKRVihjqQ/exec';
 
 // ?demo=1 を付けると本番につながず、ブラウザ内の仮データで試せる（&delay=2000 で通信の遅さも再現）
@@ -986,7 +986,6 @@ $('#setForm').addEventListener('submit', async ev => {
     $('#setError').textContent = 'Apps Script のWebアプリURL（https://script.google.com/macros/s/…/exec）を入力してください';
     return;
   }
-  if (url && !token) { $('#setError').textContent = '合言葉を入力してください'; return; }
   settings = { url, token };
   saveSettings();
   setDlg.close();
@@ -1038,11 +1037,8 @@ window.addEventListener('resize', () => {
 document.addEventListener('visibilitychange', () => poll(false));
 
 renderAll();
-if (settings.url && !settings.token) openSettings('合言葉を入力してください');
-else {
-  if (loadLocal()) { renderAll(); setSync('前回のデータを表示中・更新しています…'); }
-  bootstrap();
-}
+if (loadLocal()) { renderAll(); setSync('前回のデータを表示中・更新しています…'); }
+bootstrap();
 </script>
 </body>
 </html>

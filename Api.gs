@@ -11,6 +11,9 @@
  */
 const LOG_ID_COL = 7;
 const LOG_COLS = 7;
+// 合言葉の確認。false の間はURLを知っていれば誰でも使える（使い始めの入力を不要にするため）。
+// 合言葉で守りたくなったら true にして setupApiToken を実行し、デプロイを新バージョンで更新する
+const REQUIRE_TOKEN = false;
 
 /** 初回だけエディタから実行：合言葉(API_TOKEN)を発行して実行ログに表示する */
 function setupApiToken() {
@@ -35,9 +38,11 @@ function doPost(e) {
     return json_({ ok: false, error: 'リクエストの形式が不正です' });
   }
 
-  const token = PropertiesService.getScriptProperties().getProperty('API_TOKEN');
-  if (!token) return json_({ ok: false, code: 'auth', error: 'サーバー側の合言葉が未設定です（setupApiToken を実行してください）' });
-  if (req.token !== token) return json_({ ok: false, code: 'auth', error: '合言葉が違います' });
+  if (REQUIRE_TOKEN) {
+    const token = PropertiesService.getScriptProperties().getProperty('API_TOKEN');
+    if (!token) return json_({ ok: false, code: 'auth', error: 'サーバー側の合言葉が未設定です（setupApiToken を実行してください）' });
+    if (req.token !== token) return json_({ ok: false, code: 'auth', error: '合言葉が違います' });
+  }
 
   try {
     switch (req.action) {

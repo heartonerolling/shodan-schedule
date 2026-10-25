@@ -521,6 +521,7 @@ async function bootstrap(resetCache, fromSettings) {
     colors = res.colors || colors;
     cfg = { startHour: res.startHour, endHour: res.endHour, intervalMin: res.intervalMin };
     booted = true;
+    renderAll(); // 担当者の行だけ先に表示し、予約は続けて読み込む
     await refresh();
   } catch (e) {
     renderAll();
@@ -669,7 +670,7 @@ function renderTimeline() {
   tl.append(head);
 
   if (rowMembers.length === 0) {
-    tl.append(el('div', 'empty', '担当者がいません。スプレッドシートの「担当者マスタ」に担当者を登録してください。'));
+    tl.append(el('div', 'empty', booted || isDemo() ? '担当者がいません。スプレッドシートの「担当者マスタ」に担当者を登録してください。' : '読み込んでいます…'));
   }
   rowMembers.forEach(m => {
     const row = el('div', 'tl-row');

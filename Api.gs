@@ -118,8 +118,9 @@ function toMin_(t) {
 function resolveColor_(c) {
   c = String(c || '').trim();
   if (COLOR_MAP[c]) return COLOR_MAP[c];
-  const hexes = Object.keys(COLOR_MAP).map(function (k) { return COLOR_MAP[k]; });
-  return hexes.indexOf(c.toLowerCase()) !== -1 ? c.toLowerCase() : hexes[0];
+  // 分類名（例：アポ）なら対応する色に。色コード（以前の青など）はそのまま残す。それ以外は先頭の色
+  if (/^#[0-9a-f]{6}$/i.test(c)) return c.toLowerCase();
+  return COLOR_MAP[Object.keys(COLOR_MAP)[0]];
 }
 
 // 予約ログ全件を読む。IDが無い行にはIDを振ってG列にまとめて書き戻す
@@ -193,7 +194,7 @@ function validate_(d) {
   const e = toMin_(d.end);
   if (isNaN(s) || isNaN(e)) throw new Error('時刻が不正です');
   if (s < START_HOUR * 60 || e > END_HOUR * 60) throw new Error('時刻は ' + START_HOUR + ':00〜' + END_HOUR + ':00 の範囲で指定してください');
-  if (s % INTERVAL_MIN || e % INTERVAL_MIN) throw new Error('時刻は ' + INTERVAL_MIN + '分刻みで指定してください');
+  if (Math.floor(s / 60) > 24 || s % 60 > 59 || e % 60 > 59) throw new Error('時刻が不正です');
   if (s >= e) throw new Error('終了時刻は開始時刻より後にしてください');
 }
 

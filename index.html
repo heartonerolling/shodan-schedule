@@ -9,7 +9,7 @@
   --bg:#f5f6f8; --surface:#ffffff; --surface-2:#f0f2f5; --border:#e1e4e9; --border-strong:#c8ced6;
   --text:#1f2329; --muted:#687080; --accent:#2563eb; --accent-weak:#e6eeff; --accent-text:#ffffff;
   --sun:#d03b3b; --sat:#2563eb; --today:#dff3d8; --danger:#c62828; --danger-weak:#fdecec; --ok:#2e7d32;
-  --hour-line:#d3d8df; --half-line:#eef0f3; --lane-hover:#fafbfc; --now:#ef4444;
+  --hour-line:#aeb6c1; --half-line:#eef0f3; --lane-hover:#fafbfc; --row-line:#aeb6c1;
   --shadow:0 10px 30px rgba(15,23,42,.18);
   --slot-w:36px; --slot-min:32px; --row-h:54px; --name-w:108px; --head-h:34px;
 }
@@ -18,7 +18,7 @@
     --bg:#121417; --surface:#1b1e23; --surface-2:#23272e; --border:#2e333b; --border-strong:#3c424c;
     --text:#e7e9ec; --muted:#9aa2ae; --accent:#5b8cff; --accent-weak:#1e2a45; --accent-text:#ffffff;
     --sun:#ff7b7b; --sat:#7aa7ff; --today:#23402a; --danger:#ff6b6b; --danger-weak:#3a1f22; --ok:#66bb6a;
-    --hour-line:#363c45; --half-line:#262a31; --lane-hover:#1f2228; --now:#ff5a5a;
+    --hour-line:#566070; --half-line:#262a31; --lane-hover:#1f2228; --row-line:#566070;
     --shadow:0 10px 30px rgba(0,0,0,.5);
   }
 }
@@ -87,12 +87,12 @@ main.card{padding:0;overflow:hidden}
 .tl-head{display:flex;position:sticky;top:0;z-index:6;background:var(--surface-2);border-bottom:1px solid var(--border-strong);height:var(--head-h)}
 .tl-corner{position:sticky;left:0;z-index:7;width:var(--name-w);flex:none;background:var(--surface-2);border-right:1px solid var(--border-strong);display:flex;align-items:center;padding:0 12px;font-size:12px;color:var(--muted);font-weight:700}
 .tl-hours{position:relative;flex:none;width:calc(var(--slots) * var(--slot-w))}
-.tl-hour{position:absolute;top:0;bottom:0;padding-left:5px;border-left:1px solid var(--hour-line);font-size:12px;color:var(--muted);display:flex;align-items:center;font-variant-numeric:tabular-nums}
-.tl-row{display:flex;height:var(--row-h);border-bottom:1px solid var(--border)}
+.tl-hour{position:absolute;top:0;bottom:0;padding-left:5px;border-left:2px solid var(--hour-line);font-size:12px;color:var(--muted);display:flex;align-items:center;font-variant-numeric:tabular-nums}
+.tl-row{display:flex;height:var(--row-h);border-bottom:2px solid var(--row-line)}
 .tl-name{position:sticky;left:0;z-index:5;width:var(--name-w);flex:none;background:var(--surface);border-right:1px solid var(--border-strong);display:flex;align-items:center;padding:0 12px;font-weight:700;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .tl-name.orphan{color:var(--muted);font-weight:400;font-size:12px}
 .lane{position:relative;flex:none;width:calc(var(--slots) * var(--slot-w));cursor:crosshair;
-  background-image:linear-gradient(to right,var(--hour-line) 1px,transparent 1px),linear-gradient(to right,var(--half-line) 1px,transparent 1px);
+  background-image:linear-gradient(to right,var(--hour-line) 2px,transparent 2px),linear-gradient(to right,var(--half-line) 1px,transparent 1px);
   background-size:calc(var(--slot-w) * var(--per-hour)) 100%,var(--slot-w) 100%}
 .lane:hover{background-color:var(--lane-hover)}
 .bk{position:absolute;top:5px;bottom:5px;border-radius:6px;padding:3px 8px;color:#1f2329;font-size:12px;line-height:1.35;overflow:hidden;cursor:grab;box-shadow:0 1px 2px rgba(0,0,0,.18);z-index:1}
@@ -111,8 +111,6 @@ main.card{padding:0;overflow:hidden}
 .bk:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .ghost{position:absolute;top:5px;bottom:5px;border-radius:6px;background:var(--accent-weak);border:2px dashed var(--accent);pointer-events:none;font-size:11px;padding:2px 6px;color:var(--accent);font-weight:700;white-space:nowrap;overflow:hidden;z-index:3}
 .ghost.conflict{border-color:var(--danger);background:var(--danger-weak);color:var(--danger)}
-.now-line{position:absolute;top:var(--head-h);bottom:0;width:2px;margin-left:-1px;background:var(--now);z-index:2;pointer-events:none}
-.now-line::before{content:"";position:absolute;top:-4px;left:-3px;width:8px;height:8px;border-radius:50%;background:var(--now)}
 .empty{padding:40px 16px;text-align:center;color:var(--muted)}
 .tl-foot{padding:8px 14px;border-top:1px solid var(--border);color:var(--muted);font-size:12px}
 
@@ -217,8 +215,8 @@ dialog::backdrop{background:rgba(15,23,42,.45)}
         <div class="field"><label for="fMember">担当者</label><select id="fMember" required></select></div>
       </div>
       <div class="row2">
-        <div class="field"><label for="fStart">開始時刻</label><select id="fStart"></select></div>
-        <div class="field"><label for="fEnd">終了時刻</label><select id="fEnd"></select></div>
+        <div class="field"><label for="fStart">開始時刻</label><input type="text" id="fStart" inputmode="numeric" maxlength="5" placeholder="例 1530" autocomplete="off"></div>
+        <div class="field"><label for="fEnd">終了時刻</label><input type="text" id="fEnd" inputmode="numeric" maxlength="5" placeholder="例 1700" autocomplete="off"></div>
       </div>
       <div class="field"><label for="fTitle">商談内容</label><input type="text" id="fTitle" maxlength="200" placeholder="例：A社 提案打合せ" autocomplete="off"></div>
       <div class="field"><span class="lbl">色</span><div class="swatches" id="fColors"></div></div>
@@ -282,7 +280,7 @@ function el(tag, cls, text) {
 // ---------- 状態 ----------
 let cfg = { startHour: 8, endHour: 22, intervalMin: 30 };
 let members = [];
-let colors = { '赤': '#e06666', 'ピンク': '#f4b6c8', '灰': '#b7b7b7', '緑': '#93c47d', '青': '#6fa8dc' };
+let colors = { 'アポ': '#e06666', '直行アポ': '#f4b6c8', '再アポ': '#ffd966', 'ZOOM': '#93c47d', 'クレーム対応': '#b4a7d6', 'その他': '#b7b7b7' };
 const cache = {};                 // 'yyyy-MM' -> bookings[]
 let selDate = fmtDate(new Date());
 let calMonth = monthKey(selDate);
@@ -293,7 +291,17 @@ let drag = null;
 const slots = () => (cfg.endHour - cfg.startHour) * 60 / cfg.intervalMin;
 const perHour = () => 60 / cfg.intervalMin;
 const t2i = t => { const [h, m] = t.split(':').map(Number); return (h * 60 + m - cfg.startHour * 60) / cfg.intervalMin; };
-const i2t = i => { const min = cfg.startHour * 60 + i * cfg.intervalMin; return pad(Math.floor(min / 60)) + ':' + pad(min % 60); };
+const i2t = i => { const min = Math.round(cfg.startHour * 60 + i * cfg.intervalMin); return pad(Math.floor(min / 60)) + ':' + pad(min % 60); };
+// 入力欄の「1530」「930」「15:30」「15」などを「15:30」形式にする（全角数字も可）。読めなければ null
+function parseTimeInput(v) {
+  const s = String(v || '').replace(/[０-９：]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0)).replace(/\s/g, '');
+  const m = s.match(/^(\d{1,2}):?(\d{2})$/) || s.match(/^(\d{1,2})()$/);
+  if (!m) return null;
+  const h = Number(m[1]), mi = Number(m[2] || 0);
+  if (h > 24 || mi > 59 || (h === 24 && mi > 0)) return null;
+  return pad(h) + ':' + pad(mi);
+}
+const toInput = t => (t || '').replace(':', '');
 const slotW = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--slot-w')) || 36;
 const firstColor = () => Object.values(colors)[0];
 const dayBookings = () => (cache[monthKey(selDate)] || []).filter(b => b.date === selDate);
@@ -320,7 +328,8 @@ function validateBooking(b, list) {
   if (!members.includes(b.member)) return '担当者を選んでください（担当者マスタにいない人には登録できません）';
   if (!b.title.trim()) return '商談内容を入力してください';
   const s = t2i(b.start), e = t2i(b.end);
-  if (!Number.isInteger(s) || !Number.isInteger(e) || s < 0 || e > slots()) return '時刻が範囲外です';
+  if (!/^\d{2}:\d{2}$/.test(b.start) || !/^\d{2}:\d{2}$/.test(b.end)) return '時刻は「1530」のように入力してください';
+  if (s < 0 || e > slots()) return `時刻は ${cfg.startHour}:00〜${cfg.endHour}:00 の範囲で入力してください`;
   if (s >= e) return '終了時刻は開始時刻より後にしてください';
   const c = findConflict(b, list);
   if (c) return `${c.member}さんは ${c.start}〜${c.end} に「${c.title}」が入っています`;
@@ -699,7 +708,6 @@ function renderTimeline() {
     tl.append(row);
   });
 
-  renderNow();
   autoScroll(list);
   const loading = !cache[monthKey(selDate)];
   tl.classList.toggle('loading', loading);
@@ -719,19 +727,6 @@ function assignTracks(items) {
     track.set(b, i);
   });
   return { track, count: Math.max(1, ends.length) };
-}
-
-function renderNow() {
-  const tl = $('#tl');
-  tl.querySelector('.now-line')?.remove();
-  const now = new Date();
-  if (fmtDate(now) !== selDate) return;
-  const idx = (now.getHours() * 60 + now.getMinutes() - cfg.startHour * 60) / cfg.intervalMin;
-  if (idx < 0 || idx > slots()) return;
-  const line = el('div', 'now-line');
-  const nameW = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--name-w')) || 108;
-  line.style.left = (nameW + idx * slotW()) + 'px';
-  tl.append(line);
 }
 
 // ---------- 日付操作 ----------
@@ -896,18 +891,17 @@ function openEditor(b, isNew) {
   opts.forEach(m => ms.append(new Option(m, m)));
   ms.value = b.member || '';
 
-  const S = slots();
-  const fs = $('#fStart'), fe = $('#fEnd');
-  fs.innerHTML = ''; fe.innerHTML = '';
-  for (let i = 0; i < S; i++) fs.append(new Option(i2t(i), i2t(i)));
-  for (let i = 1; i <= S; i++) fe.append(new Option(i2t(i), i2t(i)));
-  fs.value = b.start; fe.value = b.end;
+  $('#fStart').value = toInput(b.start);
+  $('#fEnd').value = toInput(b.end);
 
   $('#fTitle').value = b.title || '';
   const sw = $('#fColors');
   sw.innerHTML = '';
-  const known = Object.values(colors).includes(b.color) ? b.color : firstColor();
-  Object.entries(colors).forEach(([name, hex]) => {
+  // 分類の変更前に付けた色（青など）の予約は、その色のまま選択肢に残して勝手に変わらないようにする
+  const choices = Object.entries(colors);
+  if (!isNew && b.color && !Object.values(colors).includes(b.color)) choices.push(['以前の色', b.color]);
+  const known = choices.some(([, hex]) => hex === b.color) ? b.color : firstColor();
+  choices.forEach(([name, hex]) => {
     const lab = el('label', 'swatch');
     const inp = el('input'); inp.type = 'radio'; inp.name = 'fColor'; inp.value = hex; inp.checked = hex === known;
     const span = el('span'); const dot = el('i'); dot.style.background = hex;
@@ -920,23 +914,33 @@ function openEditor(b, isNew) {
   setTimeout(() => $('#fTitle').focus(), 0);
 }
 
-// 開始時刻を変えたら、長さを保ったまま終了時刻もずらす
+// 入力欄を離れたら「1530」の形に整える。開始を終了より後にしたら、長さを保って終了もずらす
+$('#fEnd').addEventListener('change', () => {
+  const e = parseTimeInput($('#fEnd').value);
+  if (e) $('#fEnd').value = toInput(e);
+});
 $('#fStart').addEventListener('change', () => {
+  const s = parseTimeInput($('#fStart').value);
+  if (!s) return;
+  $('#fStart').value = toInput(s);
   const o = editing.orig;
   const len = Math.max(1, t2i(o.end) - t2i(o.start));
-  const s = t2i($('#fStart').value);
-  if (t2i($('#fEnd').value) <= s) $('#fEnd').value = i2t(Math.min(slots(), s + len));
+  const e = parseTimeInput($('#fEnd').value);
+  if (!e || e <= s) $('#fEnd').value = toInput(i2t(Math.min(slots(), t2i(s) + len)));
 });
 
 $('#editForm').addEventListener('submit', async ev => {
   ev.preventDefault();
   const { orig, isNew } = editing;
+  const start = parseTimeInput($('#fStart').value), end = parseTimeInput($('#fEnd').value);
+  if (!start) { $('#edError').textContent = '開始時刻を「1530」のように入力してください'; return; }
+  if (!end) { $('#edError').textContent = '終了時刻を「1700」のように入力してください'; return; }
   const b = {
     id: isNew ? null : orig.id,
     date: $('#fDate').value,
     member: $('#fMember').value,
-    start: $('#fStart').value,
-    end: $('#fEnd').value,
+    start,
+    end,
     title: $('#fTitle').value.trim(),
     color: (document.querySelector('input[name="fColor"]:checked') || {}).value || firstColor()
   };
@@ -1029,7 +1033,6 @@ async function poll(force) {
   try { await (booted ? refresh(true, force) : bootstrap()); } finally { polling = false; }
 }
 setInterval(() => poll(++pollCount % FULL_EVERY === 0), POLL_MS);
-setInterval(renderNow, 60 * 1000);
 let resizeTimer = null;
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);

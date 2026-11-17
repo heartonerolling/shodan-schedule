@@ -467,7 +467,7 @@ function loadLocal() {
   try {
     const d = JSON.parse(localStorage.getItem(LS_LOCAL) || 'null');
     if (!d || d.url !== settings.url) return false;
-    members = d.members || members; colors = d.colors || colors; cfg = d.cfg || cfg;
+    members = d.members || members; cfg = d.cfg || cfg;
     Object.assign(cache, d.months || {});
     return true;
   } catch (e) { return false; }
